@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Réserver - Le Petit Bistrot</title>
-    <script src="https://js.stripe.com/v3/"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://js.stripe.com/v3/"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen flex items-center justify-center">
@@ -16,10 +16,17 @@
 
         <div v-if="step === 1">
             <div class="space-y-4">
+                
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Votre Nom</label>
                     <input v-model="form.name" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Jean Dupont">
                 </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Votre Email</label>
+                    <input v-model="form.email" type="email" class="mt-1 block w-full p-2 border rounded-md" placeholder="jean@exemple.com">
+                </div>
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Date</label>
@@ -28,73 +35,117 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Heure</label>
                         <select v-model="form.time" class="mt-1 block w-full p-2 border rounded-md bg-white">
-                            <option>19:30</option>
-                            <option>20:00</option>
-                            <option>20:30</option>
+                            <option>12:00</option><option>12:30</option><option>13:00</option>
+                            <option>19:00</option><option>19:30</option><option>20:00</option><option>20:30</option>
                         </select>
                     </div>
                 </div>
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Nombre de personnes</label>
-                    <input v-model.number="form.pax" type="number" min="1" class="mt-1 block w-full p-2 border rounded-md">
+                    <input v-model="form.pax" type="number" min="1" class="mt-1 block w-full p-2 border rounded-md">
                 </div>
-                <button @click="initiateBooking" :disabled="loading" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">
-                    {{ loading ? 'Chargement...' : 'Continuer' }}
+
+                <button @click="submitBooking" class="w-full bg-blue-600 text-white p-3 rounded-md font-bold hover:bg-blue-700 transition">
+                    Continuer
                 </button>
             </div>
         </div>
 
         <div v-show="step === 2">
-            <div id="payment-element" class="mb-4"></div>
-            <button @click="confirmBooking" :disabled="processing" class="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 font-bold">
-                {{ processing ? 'Validation...' : 'Valider l\'empreinte' }}
+            <div id="payment-element" class="mb-4">
+                </div>
+            
+            <button id="submit" @click="confirmPayment" class="w-full bg-green-600 text-white p-3 rounded-md font-bold hover:bg-green-700 transition">
+                Valider l'empreinte
             </button>
-            <button @click="step = 1" class="w-full mt-2 text-gray-500 text-sm hover:underline">Retour</button>
+            
+            <button @click="step = 1" class="w-full mt-2 text-gray-500 text-sm hover:underline">
+                Retour
+            </button>
         </div>
 
-        <div v-if="step === 3" class="text-center">
-            <div class="text-5xl mb-4">✅</div>
-            <h2 class="text-xl font-bold text-gray-800">Réservation Confirmée !</h2>
+        <div v-if="message" class="mt-4 p-3 rounded text-center" :class="error ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">
+            {{ message }}
         </div>
     </div>
 
     <script>
         const { createApp } = Vue;
-        // ⚠️ METS TA CLÉ PUBLIQUE STRIPE ICI (pk_test_...)
-        const stripe = Stripe('pk_test_51SwoLAAU8Nnw6fb8IaXoDqD4WfaJK2i7NFoDXdKv7GiKil8K5lIYg7SXYt8jwTpr0GvUYGMgIGGx8rQn2cSySTBK00F0rXa0Xw'); 
+        // ⚠️ REMETS TA CLÉ PUBLIQUE STRIPE ICI (pk_test_...)
+        const stripe = Stripe("pk_test_51SwoLAAU8Nnw6fb8IaXoDqD4WfaJK2i7NFoDXdKv7GiKil8K5lIYg7SXYt8jwTpr0GvUYGMgIGGx8rQn2cSySTBK00F0rXa0Xw"); 
 
         createApp({
             data() {
                 return {
-                    step: 1, loading: false, processing: false, elements: null, clientSecret: null,
-                    form: { restaurant_id: 1, name: '', date: '', time: '20:00', pax: 2 }
+                    step: 1,
+                    message: '',
+                    error: false,
+                    clientSecret: null,
+                    elements: null,
+                    form: {
+                        restaurant_id: 1,
+                        name: '',
+                        email: '', // L'email est bien là
+                        date: '2026-02-04',
+                        time: '20:00',
+                        pax: 2
+                    }
                 }
             },
             methods: {
-                async initiateBooking() {
-                    this.loading = true;
-                    try {
-                        const response = await fetch('/create-deposit', { // Note le chemin relatif
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify(this.form)
-                        });
-                        const data = await response.json();
+                async submitBooking() {
+                    this.message = "Initialisation...";
+                    
+                    // On envoie les données au backend
+                    const res = await fetch('/create-deposit', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(this.form)
+                    });
+
+                    const data = await res.json();
+
+                    if(data.clientSecret) {
                         this.clientSecret = data.clientSecret;
-                        this.elements = stripe.elements({ clientSecret: this.clientSecret });
-                        const paymentElement = this.elements.create('payment');
-                        paymentElement.mount('#payment-element');
-                        this.step = 2;
-                    } catch (error) { alert("Erreur serveur"); console.error(error); } finally { this.loading = false; }
+                        this.step = 2; // On passe à l'étape paiement
+                        
+                        // On charge Stripe
+                        this.$nextTick(() => {
+                            const appearance = { theme: 'stripe' };
+                            this.elements = stripe.elements({ appearance, clientSecret: this.clientSecret });
+                            const paymentElement = this.elements.create("payment");
+                            paymentElement.mount("#payment-element");
+                        });
+                        this.message = "";
+                    } else {
+                        this.error = true;
+                        this.message = "Erreur: " + data.detail;
+                    }
                 },
-                async confirmBooking() {
-                    this.processing = true;
+                async confirmPayment() {
+                    this.message = "Validation en cours...";
+                    
                     const { error } = await stripe.confirmPayment({
                         elements: this.elements,
-                        confirmParams: { return_url: window.location.href },
+                        confirmParams: {
+                            // Page de succès (ne sera pas forcément utilisée si on reste sur la même page)
+                            return_url: window.location.href,
+                        },
                         redirect: "if_required"
                     });
-                    if (error) { alert(error.message); this.processing = false; } else { this.step = 3; this.processing = false; }
+
+                    if (error) {
+                        this.error = true;
+                        this.message = error.message;
+                    } else {
+                        this.step = 3; // Etape finale (cachée, juste le message)
+                        this.error = false;
+                        this.message = "✅ Réservation Confirmée ! Un email vous a été envoyé.";
+                        // On cache le bouton de validation
+                        document.querySelector('#submit').style.display = 'none';
+                        document.querySelector('#payment-element').style.display = 'none';
+                    }
                 }
             }
         }).mount('#app');
