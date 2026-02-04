@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from typing import List
 from contextlib import asynccontextmanager
 
-# 👇 NOUVEL IMPORT : On appelle notre facteur
-from email_service import send_confirmation_email
+# 👇 ON IMPORTE MAINTENANT LES DEUX FONCTIONS
+from email_service import send_confirmation_email, send_admin_alert
 
 from Database import SessionLocal, engine, Restaurant, Booking, ResourceType, BookingStatus, init_db
 
@@ -64,11 +64,10 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# 👇 MISE À JOUR : On ajoute l'email dans la requête
 class BookingRequest(BaseModel):
     restaurant_id: int
     name: str
-    email: str  # <--- Nouveau champ
+    email: str
     date: str
     time: str
     pax: int
@@ -98,11 +97,10 @@ def create_deposit(req: BookingRequest, db: Session = Depends(get_db)):
             metadata={'restaurant_id': restaurant.id, 'client_name': req.name, 'client_email': req.email}
         )
         
-        # Enregistrement en base (avec l'email !)
         new_booking = Booking(
             restaurant_id=restaurant.id,
             client_name=req.name,
-            client_email=req.email, # <--- On sauvegarde l'email
+            client_email=req.email,
             pax=req.pax,
             stripe_payment_intent_id=intent.id,
             status=BookingStatus.PENDING
@@ -110,9 +108,10 @@ def create_deposit(req: BookingRequest, db: Session = Depends(get_db)):
         db.add(new_booking)
         db.commit()
 
-        # 👇 ENVOI DE L'EMAIL DE CONFIRMATION 👇
-        print(f"Tentative d'envoi d'email à {req.email}...")
+        # 👇 ICI : ON ENVOIE LES DEUX EMAILS 👇
+        print(f"📧 Notification Client + Admin...")
         send_confirmation_email(req.email, req.name, req.date, req.time, req.pax)
+        send_admin_alert(req.name, req.date, req.time, req.pax) # <--- C'est nouveau !
 
         return {"clientSecret": intent.client_secret}
 
